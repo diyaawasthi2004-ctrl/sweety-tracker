@@ -23,7 +23,10 @@ function calculateStats(readings) {
     highest,
     lowest,
     average,
-    readings
+    readings: readings.map(r => ({
+      ...r,
+      timing: r.slot // Map database 'slot' column to frontend 'timing' property
+    }))
   };
 }
 
@@ -84,11 +87,11 @@ async function getReport(req, res) {
       return res.status(400).json({ error: 'Invalid report type. Use daily, mtd, or monthly.' });
     }
 
-    // Query readings within the date range for the user
+    // Query readings within the date range for the user using the 'date' column
     const queryStr = `
       SELECT * FROM readings 
-      WHERE user_id = $1 AND DATE(created_at) >= $2 AND DATE(created_at) <= $3
-      ORDER BY created_at DESC, id DESC
+      WHERE user_id = $1 AND date >= $2 AND date <= $3
+      ORDER BY date DESC, id DESC
     `;
 
     const result = await db.query(queryStr, [userId, startDateStr, endDateStr]);
@@ -101,7 +104,7 @@ async function getReport(req, res) {
     });
   } catch (err) {
     console.error('Report error:', err.message);
-    res.status(500).json({ error: 'Server error while generating report' });
+    res.status(500).json({ error: `Server error: ${err.message}` });
   }
 }
 
