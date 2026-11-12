@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import API from '../services/api';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 
 const VALID_SLOTS = ['Morning (fasting)', 'After breakfast', 'After lunch', 'After dinner'];
 
@@ -15,6 +25,10 @@ function Dashboard() {
   const [date, setDate] = useState(todayStr);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   // Inline Edit state
   const [editingId, setEditingId] = useState(null);
@@ -85,7 +99,7 @@ function Dashboard() {
     setError('');
     setEditingId(r.id);
     setEditSugar(r.sugar_level);
-    setEditTiming(r.timing);
+    setEditTiming(r.timing || r.timing_slot);
     setEditNotes(r.notes || '');
   };
 
@@ -113,6 +127,21 @@ function Dashboard() {
       setError(err.response?.data?.error || 'Failed to delete reading');
     }
   };
+
+  // Pagination calculations
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentReadings = readings.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(readings.length / itemsPerPage);
+
+  // Prepare data for Recharts
+  const chartData = [...readings]
+    .sort((a, b) => new Date(a.date || a.created_at) - new Date(b.date || b.created_at))
+    .map((r) => ({
+      date: r.date ? r.date.split('T')[0] : new Date(r.created_at).toLocaleDateString(),
+      sugar: r.sugar_level,
+      timing: r.timing || r.timing_slot,
+    }));
 
   return (
     <div style={{ maxWidth: '900px', margin: '30px auto', padding: '20px' }}>
@@ -181,9 +210,9 @@ function Dashboard() {
         </form>
       </section>
 
-      {/* REPORTS SECTION */}
+      {/* REPORTS SECTION & RECHARTS */}
       <section style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '8px', marginBottom: '30px' }}>
-        <h3>Glucose Reports</h3>
+        <h3>Glucose Reports & Trends</h3>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
           <div>
             <button
@@ -274,12 +303,12 @@ function Dashboard() {
             </div>
 
             {reportType === 'daily' && reportData.readings?.length > 0 && (
-              <div>
+              <div style={{ marginBottom: '20px' }}>
                 <h4>Daily Breakdown</h4>
                 <ul style={{ paddingLeft: '20px' }}>
                   {reportData.readings.map((item) => (
                     <li key={item.id} style={{ marginBottom: '4px' }}>
-                      <strong>{item.timing}:</strong> {item.sugar_level} mg/dL {item.notes ? `(${item.notes})` : ''}
+                      <strong>{item.timing || item.timing_slot}:</strong> {item.sugar_level} mg/dL {item.notes ? `(${item.notes})` : ''}
                     </li>
                   ))}
                 </ul>
@@ -287,98 +316,140 @@ function Dashboard() {
             )}
           </div>
         )}
+
+        {/* RECHARTS TREND GRAPH */}
+        {chartData.length > 0 && (
+          <div style={{ marginTop: '20px' }}>
+            <h4>Glucose Trend Chart</h4>
+            <div style={{ width: '100%', height: 280, background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #ddd' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis domain={[40, 400]} />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="sugar" name="Sugar Level (mg/dL)" stroke="#007bff" strokeWidth={2} activeDot={{ r: 8 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </section>
 
-      {/* RECENT READINGS TABLE WITH EDIT & DELETE */}
+      {/* RECENT READINGS TABLE WITH PAGINATION & EDIT/DELETE */}
       <section>
         <h3>All Readings</h3>
         {readings.length === 0 ? (
           <p>No readings logged yet.</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px' }}>
-            <thead>
-              <tr style={{ background: '#f2f2f2', color: '#333', textAlign: 'left' }}>
-                <th style={{ padding: '10px', border: '1px solid #ddd' }}>Date</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd' }}>Sugar Level (mg/dL)</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd' }}>Timing</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd' }}>Notes</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {readings.map((r) => (
-                <tr key={r.id}>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                    {new Date(r.created_at).toLocaleDateString()}
-                  </td>
-
-                  {editingId === r.id ? (
-                    <>
-                      <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                        <input
-                          type="number"
-                          value={editSugar}
-                          onChange={(e) => setEditSugar(e.target.value)}
-                          style={{ width: '80px', padding: '4px' }}
-                        />
-                      </td>
-                      <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                        <select value={editTiming} onChange={(e) => setEditTiming(e.target.value)} style={{ padding: '4px' }}>
-                          {VALID_SLOTS.map((slot) => (
-                            <option key={slot} value={slot}>{slot}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                        <input
-                          type="text"
-                          value={editNotes}
-                          onChange={(e) => setEditNotes(e.target.value)}
-                          style={{ width: '100%', padding: '4px' }}
-                        />
-                      </td>
-                      <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                        <button
-                          onClick={() => handleSaveEdit(r.id)}
-                          style={{ padding: '4px 10px', marginRight: '6px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditingId(null)}
-                          style={{ padding: '4px 10px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                        >
-                          Cancel
-                        </button>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold' }}>
-                        {r.sugar_level}
-                      </td>
-                      <td style={{ padding: '10px', border: '1px solid #ddd' }}>{r.timing}</td>
-                      <td style={{ padding: '10px', border: '1px solid #ddd' }}>{r.notes || '-'}</td>
-                      <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                        <button
-                          onClick={() => startEdit(r)}
-                          style={{ padding: '4px 10px', marginRight: '6px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(r.id)}
-                          style={{ padding: '4px 10px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </>
-                  )}
+          <>
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px' }}>
+              <thead>
+                <tr style={{ background: '#f2f2f2', color: '#333', textAlign: 'left' }}>
+                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Date</th>
+                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Sugar Level (mg/dL)</th>
+                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Timing</th>
+                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Notes</th>
+                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {currentReadings.map((r) => (
+                  <tr key={r.id}>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>
+                      {r.date ? r.date.split('T')[0] : new Date(r.created_at).toLocaleDateString()}
+                    </td>
+
+                    {editingId === r.id ? (
+                      <>
+                        <td style={{ padding: '10px', border: '1px solid #ddd' }}>
+                          <input
+                            type="number"
+                            value={editSugar}
+                            onChange={(e) => setEditSugar(e.target.value)}
+                            style={{ width: '80px', padding: '4px' }}
+                          />
+                        </td>
+                        <td style={{ padding: '10px', border: '1px solid #ddd' }}>
+                          <select value={editTiming} onChange={(e) => setEditTiming(e.target.value)} style={{ padding: '4px' }}>
+                            {VALID_SLOTS.map((slot) => (
+                              <option key={slot} value={slot}>{slot}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '10px', border: '1px solid #ddd' }}>
+                          <input
+                            type="text"
+                            value={editNotes}
+                            onChange={(e) => setEditNotes(e.target.value)}
+                            style={{ width: '100%', padding: '4px' }}
+                          />
+                        </td>
+                        <td style={{ padding: '10px', border: '1px solid #ddd' }}>
+                          <button
+                            onClick={() => handleSaveEdit(r.id)}
+                            style={{ padding: '4px 10px', marginRight: '6px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingId(null)}
+                            style={{ padding: '4px 10px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold' }}>
+                          {r.sugar_level}
+                        </td>
+                        <td style={{ padding: '10px', border: '1px solid #ddd' }}>{r.timing || r.timing_slot}</td>
+                        <td style={{ padding: '10px', border: '1px solid #ddd' }}>{r.notes || '-'}</td>
+                        <td style={{ padding: '10px', border: '1px solid #ddd' }}>
+                          <button
+                            onClick={() => startEdit(r)}
+                            style={{ padding: '4px 10px', marginRight: '6px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(r.id)}
+                            style={{ padding: '4px 10px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* PAGINATION CONTROLS */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
+                <button
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  style={{ padding: '6px 12px', background: currentPage === 1 ? '#ccc' : '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                >
+                  Previous
+                </button>
+                <span>Page {currentPage} of {totalPages}</span>
+                <button
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  style={{ padding: '6px 12px', background: currentPage === totalPages ? '#ccc' : '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>
